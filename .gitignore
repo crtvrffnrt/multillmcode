@@ -1,0 +1,8 @@
+logs/*
+reports/*
+artifacts/*
+runs/*
+__pycache__/
+*.pyc
+.DS_Store
+.env

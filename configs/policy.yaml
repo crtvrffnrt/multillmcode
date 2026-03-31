@@ -1,0 +1,15 @@
+policy:
+  authorized_targets:
+    - 127.0.0.1       # Localhost
+    - 10.0.0.1        # Example target 1
+    - 192.168.1.1     # Example target 2
+  authorized_modes:
+    - BUILD
+    - ANALYZE
+    - PASSIVE_RECON
+    - LAB
+    - REPORT
+  require_approval:
+    - ACTIVE_EXPLOIT
+    - PERSISTENCE
+    - DATA_EXFILTRATION
