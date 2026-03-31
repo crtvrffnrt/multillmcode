@@ -9,6 +9,7 @@ Before using the MultiLLM Orchestrator, ensure you have the following CLI tools 
 ### 1. Gemini CLI
 The Gemini CLI is used for analytical interpretation and summarization.
 - **Login:** Follow the on-screen prompts during your first run or use the standard authentication method provided by your environment.
+- This project launches Gemini in headless `--prompt` mode with `--approval-mode yolo` so runs do not pause for approvals.
 
 ### 2. Codex CLI
 The Codex CLI is the primary agent for code generation and technical implementation.
@@ -17,6 +18,7 @@ The Codex CLI is the primary agent for code generation and technical implementat
   codex login
   ```
   Follow the browser-based OAuth flow or use `--with-api-key` if required.
+- This project launches Codex with `--dangerously-bypass-approvals-and-sandbox` so it can run unattended with full local access.
 
 ### 3. Claude Code CLI
 Claude is used for architectural review and security policy validation.
@@ -24,6 +26,7 @@ Claude is used for architectural review and security policy validation.
   ```bash
   claude auth login
   ```
+- This project launches Claude in `--print` mode with `--dangerously-skip-permissions` enabled so it can complete non-interactively.
 
 ## Installation
 
@@ -53,6 +56,7 @@ Configure the safety boundaries:
 - `authorized_targets`: List of IPs or hostnames the agents are allowed to interact with.
 - `authorized_modes`: Allowed operation types (e.g., BUILD, ANALYZE).
 - `require_approval`: Actions that trigger a mandatory human-in-the-loop check.
+- The default prompt wrapper exports `MULTILLM_ALLOW_ALL_TARGETS=1`, `MULTILLM_UNATTENDED=1`, `CI=1`, and `NONINTERACTIVE=1` so the tool runs without user interaction unless you override those variables.
 
 ## Usage
 

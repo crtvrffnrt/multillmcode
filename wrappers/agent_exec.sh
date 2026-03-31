@@ -12,6 +12,9 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 ROOT_DIR="$( dirname "$SCRIPT_DIR" )"
 LOG_DIR="${ROOT_DIR}/logs"
 SKILLS_DIR="${MULTILLM_SKILLS_DIR:-$HOME/.agents/skills}"
+export CI="${CI:-1}"
+export NONINTERACTIVE="${NONINTERACTIVE:-1}"
+export GIT_TERMINAL_PROMPT=0
 
 # Ensure logs dir exists
 mkdir -p "$LOG_DIR"

@@ -1,15 +1,15 @@
 agents:
   - name: codex
     type: IMPLEMENTATION
-    default_cmd: "codex exec --skip-git-repo-check"
+    default_cmd: "codex --dangerously-bypass-approvals-and-sandbox exec --skip-git-repo-check"
     description: "Primary agent for code generation and task execution."
   
   - name: gemini
     type: INTERPRETATION
-    default_cmd: "gemini"
+    default_cmd: "gemini -p --approval-mode yolo --yolo"
     description: "Agent for summarization and analytical interpretation."
 
   - name: claude
     type: ARCHITECTURE
-    default_cmd: "claude --print --permission-mode bypassPermissions"
+    default_cmd: "claude --print --permission-mode bypassPermissions --allow-dangerously-skip-permissions --dangerously-skip-permissions"
     description: "Agent for architecture review and security policy validation."
