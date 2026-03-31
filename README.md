@@ -62,12 +62,26 @@ Run the orchestrator with a high-level goal:
 python3 core/orchestrator.py "Execute an nmap scan on 127.0.0.1 and analyze the results for vulnerabilities."
 ```
 
+For a single prompt with live streaming output:
+
+```bash
+chmod +x prompt.sh
+./prompt.sh "what is 1+1"
+```
+
 ### Directory Structure
 - `core/`: The central orchestration logic.
 - `configs/`: Agent and security policy definitions.
 - `wrappers/`: Audited shell wrappers for agent execution.
-- `logs/`: Detailed audit logs, stdout, and stderr for every agent interaction.
+- `logs/runs/<run_id>/`: Detailed audit logs, stdout, stderr, and incremental event logs for each run.
 - `runs/`: JSON-formatted execution records and metadata.
 
 ## Security & Auditing
-Every command executed by an agent is passed through `wrappers/agent_exec.sh`, which logs the exact command, start/end times, exit codes, and full output. The orchestrator enforces the `policy.yaml` rules before any task is dispatched to an agent.
+Every command executed by an agent is passed through `wrappers/agent_exec.sh`, which logs the exact command, start/end times, exit codes, and full output into a run-scoped directory under `logs/runs/<run_id>/`. The orchestrator enforces the `policy.yaml` rules before any task is dispatched to an agent and prepends the shared instruction block plus the global skill registry to each agent prompt.
+
+If your shared skills live somewhere other than `~/.agents/skills`, set `MULTILLM_SKILLS_DIR` before running the CLI:
+
+```bash
+export MULTILLM_SKILLS_DIR="$HOME/.agents/skills"
+./prompt.sh "..."
+```
