@@ -1,6 +1,6 @@
 # MultiLLM Orchestrator
 
-A modular framework for orchestrating multiple Large Language Model (LLM) CLI agents to perform complex, multi-step tasks. This tool decomposes goals into actionable tasks, assigns them to specialized agents (Gemini, Codex, Claude), and manages the execution flow with integrated policy enforcement and audited logging.
+A modular helper framework for orchestrating multiple Large Language Model (LLM) CLI agents to perform complex, multi-step tasks. This tool decomposes goals into actionable tasks, assigns them to specialized agents (Gemini, Codex, Claude), and manages the execution flow with integrated policy enforcement and audited logging.
 
 ## Prerequisites
 
