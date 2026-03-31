@@ -71,35 +71,81 @@ class MultiLLMOrchestrator:
     def is_authorized(self, target):
         return target in self.policy["authorized_targets"]
 
-    def decompose_goal(self, goal):
-        """Simple task graph decomposition logic."""
+    def _decompose_with_agent(self, goal, run_id, run_dir):
+        decomposition_prompt = f"""Decompose the following user goal into a task graph for specialized agents.
+User Goal: {goal}
+
+Available Agents:
+- codex: implementation, scripting, CLI execution.
+- gemini: analysis, interpretation, summarization.
+- claude: architecture review, policy validation, security assessment.
+
+Output a JSON array of tasks. Each task MUST have:
+- id: unique string
+- agent: one of [codex, gemini, claude]
+- prompt: the specific instruction for the agent
+- depends_on: (optional) list of task IDs this task depends on
+- target: (optional) IP or hostname if the task interacts with a specific target
+
+Example:
+[
+  {{"id": "recon", "agent": "codex", "prompt": "Scan 127.0.0.1 for open ports", "target": "127.0.0.1"}},
+  {{"id": "analyze", "agent": "gemini", "prompt": "Identify risks in the scan results", "depends_on": ["recon"]}}
+]
+
+Return ONLY the JSON array."""
+        
+        print("[*] Requesting dynamic decomposition from gemini...", flush=True)
+        result = self.execute_with_failover("gemini", decomposition_prompt, run_id, run_dir)
+        
+        stdout = result.get("stdout", "")
+        # Extract JSON array from output
+        match = re.search(r'\[\s*\{.*\}\s*\]', stdout, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+        
+        print("[!] Dynamic decomposition failed or returned invalid JSON. Using static rules.", flush=True)
+        return []
+
+    def decompose_goal(self, goal, run_id=None, run_dir=None):
+        """Task graph decomposition logic."""
+        # First check static rules for common patterns
         tasks = []
-        # Pattern matching for lab targets
         target_match = re.search(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|localhost', goal)
         target = target_match.group(0) if target_match else "unknown"
 
-        if "scan" in goal.lower() or "ports" in goal.lower():
-            tasks.append({
-                "id": "t1_recon",
-                "agent": "codex",
-                "action": "IMPLEMENTATION",
-                "prompt": f"Execute an nmap service scan on {target}. Use: nmap -sV -Pn {target}",
-                "target": target
-            })
-            tasks.append({
-                "id": "t2_interpret",
-                "agent": "gemini",
-                "action": "INTERPRETATION",
-                "prompt": "Analyze the following scan results and identify potentially vulnerable services: ",
-                "depends_on": "t1_recon"
-            })
-            tasks.append({
-                "id": "t3_validate",
-                "agent": "claude",
-                "action": "ARCHITECTURE",
-                "prompt": "Review the identified risks and suggest 3 passive reconnaissance steps to further analyze the target without alerting defense systems.",
-                "depends_on": "t2_interpret"
-            })
+        if ("scan" in goal.lower() or "ports" in goal.lower()) and target != "unknown":
+            tasks = [
+                {
+                    "id": "t1_recon",
+                    "agent": "codex",
+                    "action": "IMPLEMENTATION",
+                    "prompt": f"Execute an nmap service scan on {target}. Use: nmap -sV -Pn {target}",
+                    "target": target
+                },
+                {
+                    "id": "t2_interpret",
+                    "agent": "gemini",
+                    "action": "INTERPRETATION",
+                    "prompt": "Analyze the following scan results and identify potentially vulnerable services: ",
+                    "depends_on": ["t1_recon"]
+                },
+                {
+                    "id": "t3_validate",
+                    "agent": "claude",
+                    "action": "ARCHITECTURE",
+                    "prompt": "Review the identified risks and suggest 3 passive reconnaissance steps to further analyze the target without alerting defense systems.",
+                    "depends_on": ["t2_interpret"]
+                }
+            ]
+        
+        # If no static rule matched and we have a run context, try dynamic decomposition
+        if not tasks and run_id and run_dir:
+            tasks = self._decompose_with_agent(goal, run_id, run_dir)
+            
         return tasks
 
     def extract_metadata(self, raw_output):
@@ -211,7 +257,6 @@ class MultiLLMOrchestrator:
 
     def execute_with_failover(self, preferred_agent, prompt, run_id, run_dir):
         attempts = []
-        last_result = None
         for agent_name in self._fallback_chain(preferred_agent):
             print(f"[>] Attempting {agent_name} for this step.", flush=True)
             self._append_jsonl(
@@ -224,10 +269,10 @@ class MultiLLMOrchestrator:
                 },
             )
             result = self.execute_agent(agent_name, prompt, run_id, run_dir=run_dir)
-            result["agent"] = agent_name
-            result["preferred_agent"] = preferred_agent
-            attempts.append(result)
-            last_result = result
+            # Create a copy for the history to avoid circular reference
+            attempt_record = dict(result)
+            attempt_record["agent"] = agent_name
+            attempts.append(attempt_record)
 
             self._append_jsonl(
                 self._run_event_log_path(run_id),
@@ -245,8 +290,12 @@ class MultiLLMOrchestrator:
             if result.get("exit_code") == 0 and not result.get("error"):
                 if agent_name != preferred_agent:
                     print(f"[*] Fallback used: {preferred_agent} -> {agent_name}", flush=True)
-                result["attempts"] = attempts
-                return result
+                
+                final_result = dict(result)
+                final_result["agent"] = agent_name
+                final_result["preferred_agent"] = preferred_agent
+                final_result["attempts"] = attempts
+                return final_result
 
             if self._is_retryable_failure(result):
                 reason = self._failure_reason(result)
@@ -255,14 +304,13 @@ class MultiLLMOrchestrator:
 
             break
 
-        aggregate = {
+        return {
             "error": "All agent attempts failed",
             "preferred_agent": preferred_agent,
             "attempts": attempts,
+            "agent": attempts[-1].get("agent") if attempts else "none",
+            "exit_code": attempts[-1].get("exit_code") if attempts else 1
         }
-        if last_result:
-            aggregate["last_result"] = last_result
-        return aggregate
 
     def run(self, goal):
         run_id = f"run_{uuid.uuid4().hex[:8]}"
@@ -283,7 +331,7 @@ class MultiLLMOrchestrator:
             },
         )
         
-        tasks = self.decompose_goal(goal)
+        tasks = self.decompose_goal(goal, run_id, run_dir)
         run_log = {
             "run_id": run_id,
             "timestamp": datetime.now().isoformat(),
@@ -293,7 +341,7 @@ class MultiLLMOrchestrator:
             "tasks": []
         }
 
-        context_buffer = ""
+        task_outputs = {}
         if not tasks:
             print("[*] No decomposition tasks matched; running a single prompt through gemini.", flush=True)
             result = self.execute_with_failover("gemini", goal, run_id, run_dir)
@@ -332,13 +380,23 @@ class MultiLLMOrchestrator:
                     )
                     continue
 
+                # Build context from dependencies
+                context_buffer = ""
+                dependencies = task.get("depends_on", [])
+                if isinstance(dependencies, str):
+                    dependencies = [dependencies]
+                    
+                for dep_id in dependencies:
+                    if dep_id in task_outputs:
+                        context_buffer += f"\n--- PRIOR OUTPUT ({dep_id}) ---\n" + task_outputs[dep_id]
+
                 current_prompt = task["prompt"] + context_buffer
                 result = self.execute_with_failover(task["agent"], current_prompt, run_id, run_dir)
             
-                # Update context buffer from stdout for following tasks
+                # Update task outputs from result
                 if "stdout_path" in result and os.path.exists(result["stdout_path"]):
                     with open(result["stdout_path"], "r") as f:
-                        context_buffer = f"\n--- PRIOR OUTPUT ({task['id']}) ---\n" + f.read()
+                        task_outputs[task["id"]] = f.read()
 
                 run_log["tasks"].append({
                     "task_id": task["id"],
@@ -363,6 +421,19 @@ class MultiLLMOrchestrator:
         # Save run record
         with open(run_path, "w") as f:
             json.dump(run_log, f, indent=2)
+
+        # Final summary
+        print(f"[*] Generating run summary...", flush=True)
+        summary_prompt = f"Provide a brief, high-level summary of the entire run for the goal: {goal}\n\nTasks and outcomes:\n"
+        for t in run_log["tasks"]:
+             status = "Success" if t["metadata"].get("exit_code") == 0 else "Failed"
+             summary_prompt += f"- Task {t['task_id']} ({t['agent']}): {status}\n"
+        
+        summary_result = self.execute_with_failover("gemini", summary_prompt, run_id, run_dir)
+        print("\n=== RUN SUMMARY ===")
+        print(summary_result.get("stdout", "No summary generated."))
+        print("===================\n")
+
         self._append_jsonl(
             event_log_path,
             {

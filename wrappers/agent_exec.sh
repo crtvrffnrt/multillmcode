@@ -44,7 +44,7 @@ DURATION_MS=$(( (END_TIME - START_TIME) / 1000000 ))
 
 if grep -qiE 'quota|rate limit|resource_exhausted|exhausted your capacity|out of tokens|token limit|context length|context window|backenderror|internal error|service unavailable|temporarily unavailable|too many requests|command not found|permission denied|429|500' "$STDERR_FILE"; then
     RETRYABLE=true
-    FAILURE_REASON="$(head -n 1 "$STDERR_FILE" | tr -d '\r' | cut -c1-240)"
+    FAILURE_REASON="$(grep -iE 'quota|rate limit|resource_exhausted|exhausted your capacity|out of tokens|token limit|context length|context window|backenderror|internal error|service unavailable|temporarily unavailable|too many requests|command not found|permission denied|429|500' "$STDERR_FILE" | head -n 1 | tr -d '\r' | cut -c1-240)"
 else
     RETRYABLE=false
     FAILURE_REASON=""
